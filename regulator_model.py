@@ -68,21 +68,23 @@ class RegulatorModel:
         num_controls = self.m
         num_outputs = self.q
         time_step = sim.GetTimeStep()
-        A = np.eye(num_states)
+        A = np.zeros((num_states,num_states)) #3x3 Matrix for state matrix
+        A[0,2] = -(cur_u[0]) * time_step * np.sin(0)
+        A[1,2] = cur_u[0] * time_step * np.cos(0)
+
+        #TODO "Ethan" - Could probably make these conditonals better? Sorry that its a bit messy will try and fix it later but just wanted to get something pushed for tonight 
         if(cur_x[1] > 0.1):
-            A[0,0] = 0
-            A[1,1] = 1
-            A[2,2] = 0
+            A[1,1] = 1  # Align with Y-Axis
         else:
-            A[0,0] = 0
-            A[1,1] = 1
-            A[2,2] = 1
+            A[1,1] = 1  # Align with Y-Axis
+            A[2,2] = 1 # Align theta - 0 degrees
             if(cur_x[2] < 0.1):
-                A[0,0] = 1
-                A[1,1] = 1
-                A[2,2] = 1
+                A[0,0] = 1 # Align with X-Axis
+                A[1,1] = 1  # Align with Y-Axis
+                A[2,2] = 1 # Align theta - 0 degrees
+
         B = np.array([
-            [1, 0],
+            [np.cos(0), 0],
             [1, 0],
             [0, 1]
         ]) * time_step        # get A and B matrices by linearinzing the cotinuous system dynamics
@@ -189,7 +191,7 @@ class RegulatorModel:
 
 
 
-# TODO you can change this function to allow for more passing a vector of gains
+    # TODO you can change this function to allow for more passing a vector of gains
     def setCostMatrices(self, Qcoeff, Rcoeff):
         """
         Set the cost matrices Q and R for the MPC controller.
@@ -210,10 +212,10 @@ class RegulatorModel:
             Control input cost matrix.
         """
         import numpy as np
-    
+
         num_states = self.n
         num_controls = self.m
-    
+
         # Process Qcoeff
         if np.isscalar(Qcoeff):
             # If Qcoeff is a scalar, create an identity matrix scaled by Qcoeff
@@ -225,7 +227,7 @@ class RegulatorModel:
                 raise ValueError(f"Qcoeff must be a scalar or a 1D array of length {num_states}")
             # Create a diagonal matrix with Qcoeff as the diagonal elements
             Q = np.diag(Qcoeff)
-    
+
         # Process Rcoeff
         if np.isscalar(Rcoeff):
             # If Rcoeff is a scalar, create an identity matrix scaled by Rcoeff
@@ -237,7 +239,7 @@ class RegulatorModel:
                 raise ValueError(f"Rcoeff must be a scalar or a 1D array of length {num_controls}")
             # Create a diagonal matrix with Rcoeff as the diagonal elements
             R = np.diag(Rcoeff)
-    
+
         # Assign the matrices to the object's attributes
         self.Q = Q
         self.R = R
