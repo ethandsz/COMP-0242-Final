@@ -69,9 +69,18 @@ class RegulatorModel:
         num_outputs = self.q
         time_step = sim.GetTimeStep()
         A = np.eye(num_states)
-        A[0,0] = 1
-        A[1,1] = 1
-        A[2,2] = 1
+        if(cur_x[1] > 0.1):
+            A[0,0] = 0
+            A[1,1] = 1
+            A[2,2] = 0
+        else:
+            A[0,0] = 0
+            A[1,1] = 1
+            A[2,2] = 1
+            if(cur_x[2] < 0.1):
+                A[0,0] = 1
+                A[1,1] = 1
+                A[2,2] = 1
         B = np.array([
             [1, 0],
             [1, 0],
