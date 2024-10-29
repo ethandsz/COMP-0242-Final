@@ -16,7 +16,7 @@ landmarks = np.array([
         ])
 
 
-def landmark_range_observations(self, base_position):
+def landmark_range_observations(base_position):
     y = []
     C = []
     W = W_range
@@ -99,10 +99,12 @@ def main():
     # or you can linearize around the current state and control of the robot
     # in the second case case you need to update the matrices A and B at each time step
     # and recall everytime the method updateSystemMatrices
+    state_x_for_linearization =  [0,0,0]
+    cur_u_for_linearization = [0,0]
     regulator.updateSystemMatrices(sim,state_x_for_linearization,cur_u_for_linearization)
     # Define the cost matrices
-    Qcoeff = 1000
-    Rcoeff = 1
+    Qcoeff = 10000
+    Rcoeff = 200
     regulator.setCostMatrices(Qcoeff,Rcoeff)
    
 
@@ -115,13 +117,13 @@ def main():
     ##### MPC control action #######
     v_linear = 0.0
     v_angular = 0.0
+    cmd = MotorCommands()  # Initialize command structure for motors
 
     while True:
 
 
         # True state propagation (with process noise)
         ##### advance simulation ##################################################################
-        sim.Step(cmd, "torque")
         time_step = sim.GetTimeStep()
 
         # Kalman filter prediction
@@ -148,17 +150,22 @@ def main():
 
         # Figure out what the controller should do next
         # MPC section/ low level controller section ##################################################################
-        cmd = MotorCommands()  # Initialize command structure for motors
    
         # Compute the matrices needed for MPC optimization
         # TODO here you want to update the matrices A and B at each time step if you want to linearize around the current points
         S_bar, T_bar, Q_bar, R_bar = regulator.propagation_model_regulator_fixed_std()
         H,F = regulator.compute_H_and_F(S_bar, T_bar, Q_bar, R_bar)
-        x0_mpc = np.vstack((base_pos[:2], base_bearing_))
+        x0_mpc = np.vstack(np.append(base_pos[:2],base_bearing_))
         x0_mpc = x0_mpc.flatten()
         # Compute the optimal control sequence
         H_inv = np.linalg.inv(H)
         u_mpc = -H_inv @ F @ x0_mpc
+
+        cost = 0.5 * np.dot(u_mpc.T, np.dot(H, u_mpc)) + np.dot(F.T, u_mpc)
+
+        # Print the current timestep and the cost
+        print(f"Time: {current_time} s, Cost: {cost}")
+
         # Return the optimal control sequence
         u_mpc = u_mpc[0:num_controls] 
         # Prepare control command to send to the low level controller
@@ -166,6 +173,7 @@ def main():
         angular_wheels_velocity_cmd = np.array([right_wheel_velocity, left_wheel_velocity, left_wheel_velocity, right_wheel_velocity])
         interface_all_wheels = ["velocity", "velocity", "velocity", "velocity"]
         cmd.SetControlCmd(angular_wheels_velocity_cmd, interface_all_wheels)
+        sim.Step(cmd, "torque")
 
 
        
