@@ -10,10 +10,10 @@ from regulator_model import RegulatorModel
 # global variables
 W_range = 0.5 ** 2  # Measurement noise variance (range measurements)
 landmarks = np.array([
-            [5, 10],
-            [15, 5],
-            [10, 15]
-        ])
+    [5, 10],
+    [15, 5],
+    [10, 15]
+])
 
 
 def landmark_range_observations(base_position):
@@ -25,7 +25,7 @@ def landmark_range_observations(base_position):
         dx = lm[0] - base_position[0]
         dy = lm[1] - base_position[1]
         range_meas = np.sqrt(dx**2 + dy**2)
-       
+
         y.append(range_meas)
 
     y = np.array(y)
@@ -52,13 +52,13 @@ def init_simulator(conf_file_name):
     """Initialize simulation and dynamic model."""
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     sim = pb.SimInterface(conf_file_name, conf_file_path_ext=cur_dir)
-    
+
     ext_names = np.expand_dims(np.array(sim.getNameActiveJoints()), axis=0)
     source_names = ["pybullet"]
-    
+
     dyn_model = PinWrapper(conf_file_name, "pybullet", ext_names, source_names, False, 0, cur_dir)
     num_joints = dyn_model.getNumberofActuatedJoints()
-    
+
     return sim, dyn_model, num_joints
 
 
@@ -68,69 +68,77 @@ def main():
     sim,dyn_model,num_joints=init_simulator(conf_file_name)
 
     # adjusting floor friction
-    floor_friction = 1
+    floor_friction = 100
     sim.SetFloorFriction(floor_friction)
     # getting time step
     time_step = sim.GetTimeStep()
     current_time = 0
 
-   
+
     # Initialize data storage
     base_pos_all, base_bearing_all = [], []#
+    time_all = []
 
     # initializing MPC
-     # Define the matrices
+    # Define the matrices
     num_states = 3
     num_controls = 2
-   
-    
+
+
     # Measuring all the state
-    
+
     C = np.eye(num_states)
-    
+
     # Horizon length
     N_mpc = 10
 
     # Initialize the regulator model
-    regulator = RegulatorModel(N_mpc, num_states, num_joints, num_states)
+    regulator = RegulatorModel(N_mpc, num_states, num_controls, num_states)
     # update A,B,C matrices
     # TODO provide state_x_for_linearization,cur_u_for_linearization to linearize the system
     # you can linearize around the final state and control of the robot (everything zero)
     # or you can linearize around the current state and control of the robot
     # in the second case case you need to update the matrices A and B at each time step
     # and recall everytime the method updateSystemMatrices
-    state_x_for_linearization =  [0,0,0]
-    cur_u_for_linearization = [0,0]
-    regulator.updateSystemMatrices(sim,state_x_for_linearization,cur_u_for_linearization)
+    init_pos  = np.array([2.0, 3.0])
+    init_quat = np.array([0,0,0.3827,0.9239])
+    init_base_bearing_ = quaternion2bearing(init_quat[3], init_quat[0], init_quat[1], init_quat[2])
+    cur_state_x_for_linearization = [init_pos[0], init_pos[1], init_base_bearing_]
+    cur_u_for_linearization = np.zeros(num_controls)
+    regulator.updateSystemMatrices(sim,cur_state_x_for_linearization,cur_u_for_linearization)
     # Define the cost matrices
-    Qcoeff = 10000
-    Rcoeff = 200
+    Qcoeff = np.array([410, 450, 310.0])
+    Rcoeff = np.array([1.1, 0.1])
     regulator.setCostMatrices(Qcoeff,Rcoeff)
-   
 
 
+    u_mpc = np.zeros(num_controls)
 
     ##### robot parameters ########
     wheel_radius = 0.11
     wheel_base_width = 0.46
-  
+
     ##### MPC control action #######
     v_linear = 0.0
     v_angular = 0.0
     cmd = MotorCommands()  # Initialize command structure for motors
+    init_angular_wheels_velocity_cmd = np.array([0.0, 0.0, 0.0, 0.0])
+    init_interface_all_wheels = ["velocity", "velocity", "velocity", "velocity"]
+    cmd.SetControlCmd(init_angular_wheels_velocity_cmd, init_interface_all_wheels)
 
     while True:
 
 
         # True state propagation (with process noise)
         ##### advance simulation ##################################################################
+        sim.Step(cmd, "torque")
         time_step = sim.GetTimeStep()
 
         # Kalman filter prediction
-       
-    
+
+
         # Get the measurements from the simulator ###########################################
-         # measurements of the robot without noise (just for comparison purpose) #############
+        # measurements of the robot without noise (just for comparison purpose) #############
         base_pos_no_noise = sim.bot[0].base_position
         base_ori_no_noise = sim.bot[0].base_orientation
         base_bearing_no_noise_ = quaternion2bearing(base_ori_no_noise[3], base_ori_no_noise[0], base_ori_no_noise[1], base_ori_no_noise[2])
@@ -141,21 +149,26 @@ def main():
         base_ori = sim.GetBaseOrientation()
         base_bearing_ = quaternion2bearing(base_ori[3], base_ori[0], base_ori[1], base_ori[2])
         y = landmark_range_observations(base_pos)
-    
+
         # Update the filter with the latest observations
-        
-    
+
+
         # Get the current state estimate
-        
+
 
         # Figure out what the controller should do next
         # MPC section/ low level controller section ##################################################################
-   
+
+
         # Compute the matrices needed for MPC optimization
         # TODO here you want to update the matrices A and B at each time step if you want to linearize around the current points
+        # add this 3 lines if you want to update the A and B matrices at each time step 
+        #cur_state_x_for_linearization = [base_pos[0], base_pos[1], base_bearing_]
+        #cur_u_for_linearization = u_mpc
+        #regulator.updateSystemMatrices(sim,cur_state_x_for_linearization,cur_u_for_linearization)
         S_bar, T_bar, Q_bar, R_bar = regulator.propagation_model_regulator_fixed_std()
         H,F = regulator.compute_H_and_F(S_bar, T_bar, Q_bar, R_bar)
-        x0_mpc = np.vstack(np.append(base_pos[:2],base_bearing_))
+        x0_mpc = np.hstack((base_pos[:2], base_bearing_))
         x0_mpc = x0_mpc.flatten()
         # Compute the optimal control sequence
         H_inv = np.linalg.inv(H)
@@ -167,28 +180,25 @@ def main():
         print(f"Time: {current_time} s, Cost: {cost}")
 
         # Return the optimal control sequence
-        u_mpc = u_mpc[0:num_controls] 
+        u_mpc = u_mpc[0:num_controls]
         # Prepare control command to send to the low level controller
         left_wheel_velocity,right_wheel_velocity=velocity_to_wheel_angular_velocity(u_mpc[0],u_mpc[1], wheel_base_width, wheel_radius)
         angular_wheels_velocity_cmd = np.array([right_wheel_velocity, left_wheel_velocity, left_wheel_velocity, right_wheel_velocity])
         interface_all_wheels = ["velocity", "velocity", "velocity", "velocity"]
         cmd.SetControlCmd(angular_wheels_velocity_cmd, interface_all_wheels)
-        sim.Step(cmd, "torque")
 
-
-       
 
         # Exit logic with 'q' key (unchanged)
         keys = sim.GetPyBulletClient().getKeyboardEvents()
         qKey = ord('q')
         if qKey in keys and keys[qKey] and sim.GetPyBulletClient().KEY_WAS_TRIGGERED:
             break
-        
 
 
         # Store data for plotting if necessary
         base_pos_all.append(base_pos)
         base_bearing_all.append(base_bearing_)
+        time_all.append(current_time)
 
         # Update current time
         current_time += time_step
@@ -196,10 +206,45 @@ def main():
 
     # Plotting 
     #add visualization of final x, y, trajectory and theta
+    base_X =  [arr[0] for arr in base_pos_all]
+    base_Y =  [arr[1] for arr in base_pos_all]
+    base_theta =  [arr[2] for arr in base_pos_all]
+
+    # Plotting X, Y, and θ trajectories
+    plt.figure(figsize=(12, 8))
     
+    # Plot X trajectory
+    plt.subplot(3, 1, 1)
+    plt.plot(time_all, base_X, label='X Position', color='b')
+    plt.xlabel('Time (s)')
+    plt.ylabel('X Position')
+    plt.title('MPC Robot Trajectory to Origin')
+    plt.grid(True)
+    plt.legend()
     
+    # Plot Y trajectory
+    plt.subplot(3, 1, 2)
+    plt.plot(time_all, base_Y, label='Y Position', color='g')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Y Position')
+    plt.grid(True)
+    plt.legend()
     
+    # Plot θ trajectory
+    plt.subplot(3, 1, 3)
+    plt.plot(time_all, base_theta, label='Orientation (θ)', color='r')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Orientation (θ)')
+    plt.grid(True)
+    plt.legend()
     
+    # Overall title and layout adjustments
+    plt.tight_layout()
+    plt.show()
+
+
+
+
 
 if __name__ == '__main__':
     main()

@@ -1,5 +1,5 @@
 import numpy as np
-    
+
 class RegulatorModel:
     def __init__(self, N, q, m, n):
         self.A = None
@@ -37,7 +37,7 @@ class RegulatorModel:
             R_bar[(k-1)*self.m:k*self.m, (k-1)*self.m:k*self.m] = self.R
 
         return S_bar, T_bar, Q_bar, R_bar
-    
+
     def updateSystemMatrices(self,sim,cur_x,cur_u):
         """
         Get the system matrices A and B according to the dimensions of the state and control input.
@@ -62,20 +62,22 @@ class RegulatorModel:
                 "Also, ensure that you implement the linearization logic in the updateSystemMatrices function."
             )
 
-
+        A =[]
+        B = []
         num_states = self.n
         num_controls = self.m
         num_outputs = self.q
         time_step = sim.GetTimeStep()
-        A = np.eye(num_states) 
-        # A[0,0] = 1
-        # A[1,1] = 1
-        A[2,2] = 0
+        A = np.eye(num_states)
+        A[0,0] = 1
+        A[1,1] = 1
+        A[2,2] = 1
         B = np.array([
-            [1, 0, 0, 0],
-            [1, 0, 0, 0],
-            [0, 0, 0, 0]
+            [1, 0],
+            [1, 0],
+            [0, 1]
         ]) * time_step        # get A and B matrices by linearinzing the cotinuous system dynamics
+        # get A and B matrices by linearinzing the cotinuous system dynamics
         # The linearized continuous-time system is:
 
         # \[
@@ -169,16 +171,16 @@ class RegulatorModel:
         # 0 & \Delta t
         # \end{bmatrix}.
         # \]
-        
+
         #updating the state and control input matrices
         self.A = A
         self.B = B
         self.C = np.eye(num_outputs)
-        
 
 
-    
-    # TODO you can change this function to allow for more passing a vector of gains
+
+
+# TODO you can change this function to allow for more passing a vector of gains
     def setCostMatrices(self, Qcoeff, Rcoeff):
         """
         Set the cost matrices Q and R for the MPC controller.
